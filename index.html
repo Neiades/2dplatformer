@@ -1,0 +1,298 @@
+<html>
+
+	<head>
+		<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+		
+	</head>
+	
+	<body>
+		<canvas id="canvas" width="800" height="512" style="display:block;border:1px solid;width:800px;margin-left:auto;margin-right:auto;">
+			<p>Désolé, votre navigateur ne supporte pas Canvas. Veuillez mettre à jour votre navigateur</p>
+		</canvas>
+	</body>
+	<script type="text/javascript" src="mapmanager.js"></script>
+	<script type="text/javascript" src="coinmanager.js"></script>
+	<script type="text/javascript" src="cloudmanager.js"></script>
+	<script>
+		var KEY_LEFT = 81, KEY_RIGHT = 68, KEY_JUMP = 32;
+		
+		keystate = {};
+		document.addEventListener("keydown", function(evt) {
+			keystate[evt.keyCode] = true;
+		});
+		document.addEventListener("keyup", function(evt) {
+			delete keystate[evt.keyCode];
+		});
+	
+		canvas = document.getElementById("canvas");
+		ctx = canvas.getContext("2d");
+		W = 800;
+		H = 512;
+		friction = 0.7;
+		gravity = 0.25;
+		tile = 32;
+		right = 0;
+		left = 0;
+		lastkey = "";
+		
+		player = [];
+		player.width = 32;
+		player.height = 32;
+		player.x = 15;
+		player.y = H-3*tile;
+		player.v = 2;
+		player.velx = 0;
+		player.vely = 0;
+		player.jumping = true;
+		player.grounded = false;
+		player.img = new Image();
+		player.img.src = "player.png";
+		
+		player.img.sourceX = 0;
+		player.img.sourceY = 0;
+		player.tickCount = 0;
+		player.tickperframe = 4;
+		
+		player.health = 100;
+		player.coins = 0;
+		
+		playerhitbox = [];
+		playerhitbox.width = 10;
+		playerhitbox.height = player.height;
+		
+		zombie = [];
+		zombie.x = 700;
+		zombie.y = H-3*tile;
+		zombie.size = 32;
+		zombie.v = 0.7;
+		zombie.img = new Image();
+		zombie.img.src = "enemies/zombie.png";
+		
+		zombie.img.sourceX = 0;
+		zombie.img.sourceY = 0;
+		zombie.tickCount = 0;
+		zombie.tickperframe = 4;
+		
+		curmap = 1;
+		var boxes = [];
+		
+		var coins = [];
+		coinsimg = new Image();
+		coinsimg.src = "props/coin.png";
+		
+		var clouds = [];
+		
+		mapmanager(curmap);
+		coinmanager();
+		cloudmanager();
+		
+		function getRandomInt(min, max) {
+			return Math.floor(Math.random() * (max - min + 1)) + min;
+		}
+		
+		function loadBackground(map){
+			var img = new Image();
+			img.src = "map/"+map+".png";
+			return img;
+		}
+
+		function loop() {
+			var background = loadBackground(curmap);
+			ctx.drawImage(background,0,0,W,H);
+			
+			mapswitcher(curmap);
+
+			ctx.beginPath();
+			
+			playerhitbox.x = player.x+10;
+			playerhitbox.y = player.y;
+			
+			//clouds
+			for(var i=0; i<clouds.length; i++){
+				var cloud = clouds[i];
+				
+				if(cloud.plane == 2){
+					ctx.drawImage(cloud.image,cloud.x,cloud.y,cloud.width,cloud.height);
+					cloud.x -= .25;
+				}
+				if(cloud.plane == 1){
+					ctx.drawImage(cloud.image,cloud.x,cloud.y,cloud.width,cloud.height);
+					cloud.x -= .15;
+				}
+				if(cloud.plane == 0){
+					ctx.drawImage(cloud.image,cloud.x,cloud.y,cloud.width,cloud.height);
+					cloud.x -= .5;
+				}
+				
+				if(cloud.x < 0-cloud.width){
+					cloud.x = W;
+				}
+			}
+			
+			//coins
+			for (var i = 0; i < coins.length; i++) {
+				var coin = coins[i];
+				
+				if(coin.map == curmap){
+					coin.tickCount += 1;
+					if(coin.tickCount > coin.tickperframe){
+						coin.tickCount = 0;
+						coin.sourceX += tile/2;
+						if(coin.sourceX > 7*tile/2){
+							coin.sourceX = 0;
+						}
+					}
+					ctx.drawImage(coinsimg,coin.sourceX,0,tile/2,tile/2,coin.x,coin.y,tile/2,tile/2);
+					var pickedup = coincheck(playerhitbox,coin);
+					if(pickedup == true){
+						coins.splice(i, 1);
+						player.coins++;
+					}
+				}
+			}
+			
+			//hitboxes
+			player.grounded = false;
+			for (var i = 0; i < boxes.length; i++) {
+				//ctx.rect(boxes[i].x,boxes[i].y,boxes[i].width,boxes[i].height);
+				var dir = colCheck(playerhitbox, boxes[i]);
+				if (dir === "l" || dir === "r") {
+					player.velX = 0;
+					player.jumping = false;
+				} else if (dir === "b") {
+					player.grounded = true;
+					player.jumping = false;
+				} else if (dir === "t") {
+					player.velY *= -1;
+				}
+			}
+			if(player.grounded){
+				player.vely = 0;
+			}
+ 
+			player.x += player.velx;
+			player.y += player.vely;
+			
+			//player
+			ctx.drawImage(player.img,player.img.sourceX,player.img.sourceY,tile,tile,player.x,player.y,tile,tile);
+			
+			player.tickCount += 1;
+			if(player.tickCount > player.tickperframe){
+				player.tickCount = 0;
+				player.img.sourceX += tile;
+				if(player.img.sourceX > 7*tile){
+					player.img.sourceX = 0;
+				}
+			}
+			
+			if(keystate[KEY_RIGHT] == true){
+				right += 1;
+				lastkey = "right";
+				if(player.jumping == false){
+					player.img.sourceY = 2*tile;
+				}
+				if (player.velx < player.v && player.jumping == false) {                         
+					player.velx++;                  
+				}
+			} else {
+				right = 0;
+			}
+			
+			if(keystate[KEY_LEFT] == true){
+				left += 1;
+				lastkey = "left";
+				if(player.jumping == false){
+					player.img.sourceY = 3*tile;
+				}
+				if (player.velx > -player.v && player.jumping == false) {                         
+					player.velx--;                  
+				}
+			} else {
+				left = 0;
+			}
+			
+			if(keystate[KEY_LEFT] == undefined && keystate[KEY_RIGHT] == undefined){
+				if(lastkey == "left"){
+					if(player.jumping == false){
+						player.img.sourceY = 1*tile;
+					}
+				}
+				if(lastkey == "right"){
+					if(player.jumping == false){
+						player.img.sourceY = 0*tile;
+					}
+				}
+			}
+			if(keystate[KEY_RIGHT] == true && keystate[KEY_LEFT] == true){
+				if(left < right){
+					if(!player.jumping){
+						player.img.sourceY = 1*tile;
+					} else {
+						player.img.sourceY = 5*tile;
+						player.velx = 1;
+					}
+				} else {
+					if(!player.jumping){
+						player.img.sourceY = 0*tile;
+					} else {
+						player.img.sourceY = 6*tile;
+						player.velx = -1;
+					}
+				}
+			}
+			if (keystate[KEY_JUMP] == true && player.grounded == true) {
+				if(!player.jumping){
+					player.jumping = true;
+					player.grounded = false;
+					player.vely = -player.v*2.5;
+					if(lastkey == "right"){
+						player.img.sourceY = 5*tile;
+					}
+					if(lastkey == "left"){
+						player.img.sourceY = 6*tile;
+					}
+					player.img.sourceX = 0;
+				}
+			}
+
+			if(player.velx < 0.05 && player.velx > -0.05){
+				if(player.jumping==true){
+					if(keystate[KEY_RIGHT] == true){
+						player.velx += 1;
+					}
+					if(keystate[KEY_LEFT] == true){
+						player.velx -= 1;
+					}
+				}
+			}
+			
+			if(player.jumping == false){
+				player.velx *= friction;
+			}
+			if(player.grounded == false){
+				player.vely += gravity;
+			}
+			
+			ctx.drawImage(coinsimg,0,0,tile/2,tile/2,10,10,tile/2,tile/2);
+			
+			ctx.font = "16px Helvetica";
+			ctx.fillStyle = "#FFFFFF";
+			ctx.fillText(" : "+player.coins, 26, 23);
+			
+			ctx.fill();
+			requestAnimationFrame(loop);
+		}
+		
+		// debug teleportation
+		/*
+			$('canvas').click(function(e){
+				var rect = canvas.getBoundingClientRect();
+				
+				player.x = Math.round((e.clientX-rect.left)/(rect.right-rect.left)*canvas.width)-player.width/2;
+				player.y = Math.round((e.clientY-rect.top)/(rect.bottom-rect.top)*canvas.height)-player.height/2;
+			});
+		*/
+		
+		loop();
+	</script>
+</html>
